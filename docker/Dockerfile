@@ -20,6 +20,7 @@ RUN chmod +x /start.sh
 EXPOSE 9999
 
 ENV GIT_BRANCH master
+ENV NODE_ENV production
 ENV NODE_LOG_LEVEL error
 
 VOLUME ["/var/log/supervisor/"]
