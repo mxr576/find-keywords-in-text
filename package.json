@@ -1,6 +1,6 @@
 {
   "name": "find-keywords-in-text",
-  "description": "Dummy demonstration app, which try to find the matching keywords in a text by the Levensthein distance of the words.",
+  "description": "Simple demonstration app, which try to find the matching keywords in a text from the Levensthein distance of the words.",
   "version": "0.0.1",
   "keywords": [
     "keywords",
