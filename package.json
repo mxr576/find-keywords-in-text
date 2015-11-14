@@ -27,6 +27,7 @@
   "dependencies": {
     "async": "^1.4.2",
     "bunyan": "^0.22.1",
+    "cluster": "^0.7.7",
     "natural": "^0.2.1",
     "nconf": "^0.8.2",
     "restify": "~3.0.2",
