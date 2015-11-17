@@ -28,8 +28,7 @@ module.exports = function (server) {
       /**
        * Tokenize text.
        *
-       * @param cb
-       *   Callback function.
+       * @param {callback} cb - Callback.
        */
       var getTokenizedText = function (cb) {
         var tokenized_text = tokenizer.tokenize(req.params.text);
@@ -37,12 +36,11 @@ module.exports = function (server) {
       };
 
       /**
-       * Validate, if the text is a string and return it lowercase.
+       * Validate, if the text is a string and returns it in lowercase.
        *
-       * @param text
-       *   Text to analyze.
-       * @param cb
-       *   Callback function.
+       * @param {string} text - Text to analyze.
+       * @param {callback} cb - Callback.
+       *
        * @returns {*}
        */
       var isString = function (text, cb) {
@@ -54,12 +52,10 @@ module.exports = function (server) {
       };
 
       /**
-       * Convert the strings in the array to lowercase.
+       * Convert all string in the given array to lowercase.
        *
-       * @param tokenized_text
-       *   Tokenized text array.
-       * @param cb
-       *   Callback function.
+       * @param {string[]} tokenized_text - Array of words from the text.
+       * @param {callback} cb - Callback.
        */
       var itemsToLowercase = function (tokenized_text, cb) {
         async.map(tokenized_text, isString, function (err, result) {
@@ -72,60 +68,50 @@ module.exports = function (server) {
       };
 
       /**
-       * Return the unique items in the tokenized text.
+       * Return the unique words from the given text array.
        *
-       * @param clean_tokenized
-       *   Tokenized text array.
-       * @param cb
-       *   Callback function.
-       * @returns {*}
+       * @param {string[]} tokenized_text - Array of words from the text.
+       * @param {callback} cb - Callback.
        */
-      var uniqueItems = function (clean_tokenized, cb) {
-        return cb(null, _.unique(clean_tokenized));
+      var uniqueItems = function (tokenized_text, cb) {
+        return cb(null, _.unique(tokenized_text));
       };
 
       /**
-       * Removes the stopwords from the tokenized text array.
+       * Removes the stopwords from the given text array.
        *
-       * @param clean_tokenized
-       *   Tokenited text array.
-       * @param cb
-       * @returns {*}
+       * @param {string[]} tokenized_text -  Array of words from the text.
+       * @param {callback} cb - Callback.
        */
-      var stopWordCleaning = function (clean_tokenized, cb) {
-        return cb(null, _.difference(clean_tokenized, stopwords));
+      var stopWordCleaning = function (tokenized_text, cb) {
+        return cb(null, _.difference(tokenized_text, stopwords));
       };
 
       /**
-       * Calculates the Levenshtein distance of two text.
+       * Calculates the Levenshtein distance of two words.
        *
-       * @param text1
-       *   First text item.
-       * @param text2
-       *   Second text item.
-       * @param cb
-       *   Callback function.
-       * @returns {*}
+       * @param {string} word1 - First word to compare.
+       * @param {string} word2 - Second word to compare.
+       * @param {callback} cb - Callback.
        */
-      var calculateLevenshteinDistance = function (text1, text2, cb) {
-        return cb(null, natural.LevenshteinDistance(text1, text2));
+      var calculateLevenshteinDistance = function (word1, word2, cb) {
+        return cb(null, natural.LevenshteinDistance(word1, word2));
       };
 
       /**
-       * Calculate a keyword's distance for each word in the text async.
+       * Calculate a keyword's distance from each words in the text async.
        *
-       * @param keyword
-       *   Keyword to check.
-       * @param clean_tokenized_text
-       *   Tokenized text array.
-       * @param distance
-       *   Minimum acceptable distance.
-       * @param cb
+       * @param {string} keyword - Keyword.
+       * @param {string[]} tokenized_text -  Array of words from the text.
+       * @param {int} distance - Minimum acceptable distance.
+       * @param {callback} cb - Callback.
        */
-      var calculateKeywordDistance = function (keyword, clean_tokenized_text, distance, cb) {
+      var calculateKeywordDistance = function (keyword, tokenized_text, distance, cb) {
         var asyncTasks = [];
 
-        clean_tokenized_text.forEach(function (item) {
+        // Calculate distance of this keyword from all word in the tokenized
+        // text async.
+        tokenized_text.forEach(function (item) {
           asyncTasks.push(function (callback) {
             calculateLevenshteinDistance(keyword, item, function (err, distance) {
               if (!err) {
@@ -141,6 +127,8 @@ module.exports = function (server) {
 
         async.parallel(asyncTasks, function (err, result) {
           if (!err) {
+            // Return only those ones which distance is lower or equal
+            // that the provided limit.
             return cb(null, result.filter(function (val) {
               return val.distance <= distance;
             }));
@@ -150,15 +138,17 @@ module.exports = function (server) {
       };
 
       /**
-       * Analyze the text for the given keywords and return the matching ones.
+       * Find and return the matching keywords from the text.
        */
-      async.waterfall([getTokenizedText, itemsToLowercase, uniqueItems, stopWordCleaning], function (err, clean_tokenized_text) {
+      async.waterfall([getTokenizedText, itemsToLowercase, uniqueItems, stopWordCleaning], function (err, tokenized_text) {
         if (!err) {
           var asyncTasks = [];
 
+          // Create an async task for all provided keywords, which calculate
+          // their distance from all words in the (filtered) text.
           req.params.keywords.forEach(function (keyword) {
             asyncTasks.push(function (cb) {
-              calculateKeywordDistance(keyword, clean_tokenized_text, req.params.distance, function (err, result) {
+              calculateKeywordDistance(keyword, tokenized_text, req.params.distance, function (err, result) {
                 if (!err) {
                   return cb(null, {keyword: keyword, results: result});
                 }
@@ -169,13 +159,16 @@ module.exports = function (server) {
 
           async.parallel(asyncTasks, function (err, result) {
             if (!err) {
-              // Return all keyword which has least one match in the text
-              // in the given distance level.
+              // Return only those keywords which has least one result,
+              // which means that this particular keyword's distance is
+              // lower or equal than the limit from a word in the text.
               res.send({
                 keywords: result.filter(function (keyword) {
                   return keyword.results.length > 0;
                 }),
-                clean_text: clean_tokenized_text.join(' ')
+                // For debug reasons, return the tokenized text in
+                // the response too.
+                clean_text: tokenized_text.join(' ')
               });
             }
             else {
