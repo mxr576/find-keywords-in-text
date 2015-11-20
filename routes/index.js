@@ -43,7 +43,7 @@ module.exports = function (server) {
        *
        * @returns {*}
        */
-      var isString = function (text, cb) {
+      var stringsToLowercase = function (text, cb) {
         if (util.isString(text)) {
           return cb(null, text.toLowerCase());
         }
@@ -58,7 +58,7 @@ module.exports = function (server) {
        * @param {callback} cb - Callback.
        */
       var itemsToLowercase = function (tokenized_text, cb) {
-        async.map(tokenized_text, isString, function (err, result) {
+        async.map(tokenized_text, stringsToLowercase, function (err, result) {
           if (!err) {
             return cb(null, result);
           }
@@ -99,82 +99,46 @@ module.exports = function (server) {
       };
 
       /**
-       * Calculate a keyword's distance from each words in the text async.
-       *
-       * @param {string} keyword - Keyword.
-       * @param {string[]} tokenized_text -  Array of words from the text.
-       * @param {int} distance - Minimum acceptable distance.
-       * @param {callback} cb - Callback.
-       */
-      var calculateKeywordDistance = function (keyword, tokenized_text, distance, cb) {
-        var asyncTasks = [];
-
-        // Calculate distance of this keyword from all word in the tokenized
-        // text async.
-        tokenized_text.forEach(function (item) {
-          asyncTasks.push(function (callback) {
-            calculateLevenshteinDistance(keyword, item, function (err, distance) {
-              if (!err) {
-                return callback(null, {
-                  text: item,
-                  distance: distance
-                });
-              }
-              return callback(err, null);
-            });
-          });
-        });
-
-        async.parallel(asyncTasks, function (err, result) {
-          if (!err) {
-            // Return only those ones which distance is lower or equal
-            // that the provided limit.
-            return cb(null, result.filter(function (val) {
-              return val.distance <= distance;
-            }));
-          }
-          return cb(err, null);
-        });
-      };
-
-      /**
        * Find and return the matching keywords from the text.
        */
       async.waterfall([getTokenizedText, itemsToLowercase, uniqueItems, stopWordCleaning], function (err, tokenized_text) {
         if (!err) {
-          var asyncTasks = [];
+          var isError = false;
+          var results = {
+            keywords: [],
+            clean_text: tokenized_text.join(' ')
+          };
 
-          // Create an async task for all provided keywords, which calculate
-          // their distance from all words in the (filtered) text.
-          req.params.keywords.forEach(function (keyword) {
-            asyncTasks.push(function (cb) {
-              calculateKeywordDistance(keyword, tokenized_text, req.params.distance, function (err, result) {
-                if (!err) {
-                  return cb(null, {keyword: keyword, results: result});
+          for (var i = 0; i < req.params.keywords.length; i++) {
+            for (var j = 0; j < tokenized_text.length; j++) {
+              calculateLevenshteinDistance(req.params.keywords[i], tokenized_text[j], function (err, distance) {
+                if (err) {
+                  distance = false;
+                  isError = true;
                 }
-                return cb(err, null);
-              });
-            });
-          });
-
-          async.parallel(asyncTasks, function (err, result) {
-            if (!err) {
-              // Return only those keywords which has least one result,
-              // which means that this particular keyword's distance is
-              // lower or equal than the limit from a word in the text.
-              res.send({
-                keywords: result.filter(function (keyword) {
-                  return keyword.results.length > 0;
-                }),
-                // For debug reasons, return the tokenized text in
-                // the response too.
-                clean_text: tokenized_text.join(' ')
+                // We have found a word in the text which distance is
+                // lower or equal with the required distance, so there is no
+                // need to continue the search for other matches in the text.
+                // Continue the parent iteration with the next keyword.
+                if (distance <= req.params.distance) {
+                  results.keywords.push(
+                    {
+                      keyword: req.params.keywords[i],
+                      reason: {
+                        word: tokenized_text[j],
+                        distance: distance
+                      }
+                    }
+                  );
+                  j++;
+                }
               });
             }
-            else {
-              res.send(404, {error: util.inspect(err)});
-            }
-          });
+          }
+          if (isError) {
+            results.error = 'There was en error meanwhile the text processing.';
+          }
+          res.send(200, results);
         }
         else {
           res.send(404, {error: util.inspect(err)});
